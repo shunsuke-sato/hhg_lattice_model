@@ -168,6 +168,7 @@ subroutine calc_dipole(dip)
   integer :: istate
 
   dip = 0d0
+!$omp parallel do reduction(+:dip)
   do istate = 0, nelec-1
     dip = dip + sum(xx*abs(zpsi(:,istate))**2)
   end do
@@ -184,21 +185,25 @@ subroutine dt_evolve(it)
 
   
   zexp_ziVdt = exp(-zi*0.5d0*dt*Efield_t(it)*xx)
+!$openmp parallel do
   do istate = 0, nelec-1
     zpsi(:,istate) = zexp_ziVdt(:)*zpsi(:,istate)
   end do
 
+!$openmp parallel do private(istate,jstate) collapse(2)
   do istate = 0, nelec-1
     do jstate = 0, nsite-1
       zc(jstate,istate) = sum(phi_gs(:,jstate)*zpsi(:,istate))
     end do
   end do
-  
+
+!$openmp parallel do
   do jstate = 0, nsite-1
     zc(jstate,:) = zc(jstate,:)*exp(-zi*dt*sp_energy(jstate))
   end do
 
   zpsi(:,:) =  0d0
+!$openmp parallel do private(istate,jstate)
   do istate = 0, nelec-1
     do jstate = 0, nsite-1
       zpsi(:,istate) = zpsi(:,istate) + phi_gs(:,jstate)*zc(jstate,istate)
@@ -206,6 +211,7 @@ subroutine dt_evolve(it)
   end do
 
   zexp_ziVdt = exp(-zi*0.5d0*dt*Efield_t(it+1)*xx)
+!$openmp parallel do
   do istate = 0, nelec-1
     zpsi(:,istate) = zexp_ziVdt(:)*zpsi(:,istate)
   end do
