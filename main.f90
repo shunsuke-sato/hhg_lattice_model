@@ -42,20 +42,21 @@ subroutine input
   delta_gap = 1d0
   t_hop     = 4d0*delta_gap
 
-  nelec = 32
+  nelec = 8
   nsite = 2*nelec+1
 
 ! laser fields
   omega0 = 0.1d0*delta_gap
-  Efield0 = 0.1d0
+  Efield0 = 0.05d0
   Tpulse0 = 8d0*2d0*pi/omega0
 
 ! time-propagation
   Tprop = Tpulse0
-  dt = 0.01d0
+  dt = 0.1d0
   nt = aint(Tprop/dt)+1
   dt = Tprop/nt
   write(*,"(A,2x,e26.16e3)")"refined dt=",dt
+  write(*,"(A,2x,I7)")"nt        =",nt
 
 end subroutine input
 !-------------------------------------------------------------------------------
