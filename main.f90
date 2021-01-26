@@ -9,6 +9,7 @@ module global_variables
   integer :: nsite, nelec
   real(8), allocatable :: ham0(:,:), xx(:)
   real(8) :: delta_gap, t_hop
+  real(8) :: mass, lattice_a
   complex(8),allocatable :: zpsi(:,:)
   real(8),allocatable :: phi_gs(:,:),sp_energy(:)
   real(8),allocatable :: phi_gs_transpose(:,:)
@@ -39,16 +40,25 @@ subroutine input
   implicit none
 
 ! system parameters
-  delta_gap = 1d0
-  t_hop     = 4d0*delta_gap
+! CdS: PRB 39, 10935 (1989)
+  lattice_a = 5.82d0/0.529d0
+  mass = 1d0/(1d0/0.18d0+1d0/0.53d0)
+  delta_gap = 2.5d0/27.2114d0
+
+  write(*,*)"lattice_a=",lattice_a
+  write(*,*)"mass     =",mass
+  write(*,*)"delta_gap=",delta_gap
+
+  t_hop     = 0.5d0/lattice_a*sqrt(delta_gap/mass)
+  write(*,*)"t_hop    =",t_hop
 
   nelec = 8
   nsite = 2*nelec+1
 
 ! laser fields
-  omega0 = 0.1d0*delta_gap
-  Efield0 = 0.05d0
-  Tpulse0 = 8d0*2d0*pi/omega0
+  omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
+  Efield0 = 1d6 *(0.529d-8/27.2114d0) ! MV/cm
+  Tpulse0 = 10d0*2d0*pi/omega0
 
 ! time-propagation
   Tprop = Tpulse0
