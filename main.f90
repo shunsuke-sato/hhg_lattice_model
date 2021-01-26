@@ -31,6 +31,7 @@ program main
   call input
   call preparation
 
+!  stop
   call time_propagation
 
 end program main
@@ -52,12 +53,12 @@ subroutine input
   t_hop     = 0.5d0/lattice_a*sqrt(delta_gap/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nelec = 8
+  nelec = 64
   nsite = 2*nelec+1
 
 ! laser fields
   omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
-  Efield0 = 1d6 *(0.529d-8/27.2114d0) ! MV/cm
+  Efield0 = 20d6 *(0.529d-8/27.2114d0) ! MV/cm
   Tpulse0 = 10d0*2d0*pi/omega0
 
 ! time-propagation
@@ -106,6 +107,7 @@ subroutine preparation
   phi_gs = amat_t
   phi_gs_transpose = transpose(phi_gs)
 
+  write(*,"(A,2x,1e26.16e3)")"Diameterp=",nsite*lattice_a*0.5d0
   write(*,"(A,2x,1e26.16e3)")"E_gap=",sp_energy(nelec)-sp_energy(nelec-1)
   open(20,file='eigenvalue.out')
   do isite = 0, nsite-1
