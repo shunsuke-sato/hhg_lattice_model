@@ -8,7 +8,7 @@ module global_variables
 ! physical system
   integer :: nsite, nelec
   real(8), allocatable :: ham0(:,:), xx(:)
-  real(8) :: delta_gap, t_hop
+  real(8) :: delta_gap, t_hop, delta_gap0
   real(8) :: mass, lattice_a
   complex(8),allocatable :: zpsi(:,:)
   real(8),allocatable :: phi_gs(:,:),sp_energy(:)
@@ -44,21 +44,22 @@ subroutine input
 ! CdS: PRB 39, 10935 (1989)
   lattice_a = 5.82d0/0.529d0
   mass = 1d0/(1d0/0.18d0+1d0/0.53d0)
-  delta_gap = 2.5d0/27.2114d0
+  delta_gap0= 2.5d0/27.2114d0
+  delta_gap = 7.6501778808070506d-002
 
   write(*,*)"lattice_a=",lattice_a
   write(*,*)"mass     =",mass
   write(*,*)"delta_gap=",delta_gap
 
-  t_hop     = 0.5d0/lattice_a*sqrt(delta_gap/mass)
+  t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nelec = 64
+  nelec = 2
   nsite = 2*nelec+1
 
 ! laser fields
   omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
-  Efield0 = 20d6 *(0.529d-8/27.2114d0) ! MV/cm
+  Efield0 = 10d6 *(0.529d-8/27.2114d0) ! MV/cm
   Tpulse0 = 10d0*2d0*pi/omega0
 
 ! time-propagation
@@ -109,6 +110,7 @@ subroutine preparation
 
   write(*,"(A,2x,1e26.16e3)")"Diameterp=",nsite*lattice_a*0.5d0
   write(*,"(A,2x,1e26.16e3)")"E_gap=",sp_energy(nelec)-sp_energy(nelec-1)
+  write(*,"(A,2x,1e26.16e3)")"delta E_gap=",sp_energy(nelec)-sp_energy(nelec-1)-delta_gap0
   open(20,file='eigenvalue.out')
   do isite = 0, nsite-1
     write(20,"(I7,2x,999e26.16e3)")isite,sp_energy(isite),sum(phi_gs(:,isite)**2)
