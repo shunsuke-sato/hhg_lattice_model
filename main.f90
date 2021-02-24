@@ -45,7 +45,7 @@ subroutine input
   lattice_a = 5.82d0/0.529d0
   mass = 1d0/(1d0/0.18d0+1d0/0.53d0)
   delta_gap0= 2.5d0/27.2114d0
-  delta_gap = 7.6501778808070506d-002
+  delta_gap = delta_gap0
 
   write(*,*)"lattice_a=",lattice_a
   write(*,*)"mass     =",mass
@@ -54,7 +54,7 @@ subroutine input
   t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nelec = 2
+  nelec = 32
   nsite = 2*nelec+1
 
 ! laser fields
@@ -136,21 +136,27 @@ subroutine time_propagation
   use global_variables
   implicit none
   integer :: it
-  real(8) :: dip
+  real(8) :: dip, ngs, nex
 
   call init_laser_field
 
   open(20,file='Et_Dt.out')
+  open(21,file='nex_t.out')
   do it = 0,nt
 
     call calc_dipole(dip)
     write(20,"(999e26.16e3)")it*dt,Efield_t(it),dip
 
+    if(mod(it,100)==0 .or. it == nt)then
+      call calc_nex(ngs, nex)
+      write(21,"(999e26.16e3)")it*dt,ngs,nex
+    end if
 
     call dt_evolve(it)
 
   end do
   close(20)
+  close(21)
 
 
 end subroutine time_propagation
@@ -233,4 +239,25 @@ subroutine dt_evolve(it)
 
 end subroutine dt_evolve
 !-------------------------------------------------------------------------------
+subroutine calc_nex(ngs, nex)
+  use global_variables
+  implicit none
+  real(8),intent(out) :: ngs, nex
+  real(8) :: occ_t(0:nelec-1)
+  integer :: ib1, ib2
+
+  occ_t = 0d0
+
+!$openmp parallel do private(ib1, ib2)
+  do ib1 =0 , nelec-1
+    do ib2 = 0, nelec-1
+      occ_t(ib1) = occ_t(ib1) + abs(sum(phi_gs(:,ib1)*zpsi(:,ib2)))**2
+    end do
+  end do
+
+  ngs = sum(occ_t)/nelec
+  nex = 1d0 -ngs
+  
+  
+end subroutine calc_nex
 !-------------------------------------------------------------------------------
