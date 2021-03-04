@@ -4,6 +4,9 @@ module global_variables
   real(8),parameter :: pi = 4d0*atan(1d0)
   complex(8),parameter :: zi = (0d0, 1d0)
 
+! physical parameter
+  real(8),parameter :: fs=0.024189d0
+
 
 ! physical system
   integer :: nsite, nelec
@@ -54,17 +57,19 @@ subroutine input
   t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nelec = 32
+  nelec = 1
   nsite = 2*nelec+1
 
 ! laser fields
   omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
-  Efield0 = 10d6 *(0.529d-8/27.2114d0) ! MV/cm
-  Tpulse0 = 10d0*2d0*pi/omega0
+  Efield0 = 20d6 *(0.529d-8/27.2114d0) ! MV/cm
+!  Tpulse0 = 10d0*2d0*pi/omega0
+  Tpulse0 = 0.5d0*pi*(80d0/fs)/acos((0.5d0)**(1d0/8d0))
+  write(*,"(A,2x,e26.16e3)")"Tpulse0 [fs]=",Tpulse0*fs
 
 ! time-propagation
   Tprop = Tpulse0
-  dt = 0.1d0
+  dt = 0.2d0
   nt = aint(Tprop/dt)+1
   dt = Tprop/nt
   write(*,"(A,2x,e26.16e3)")"refined dt=",dt

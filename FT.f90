@@ -2,8 +2,12 @@ program main
   implicit none
   complex(8),parameter :: zi = (0d0, 1d0)
   real(8),parameter :: pi = 4d0*atan(1d0)
+  real(8),parameter :: fs=0.024189d0
   integer,parameter :: n_harmonics = 25, nw_harmonic = 100
-  integer,parameter :: nt = 48266, nw = (n_harmonics+1)*nw_harmonic
+!  integer,parameter :: nt = 48266, nw = (n_harmonics+1)*nw_harmonic
+!  integer,parameter :: nt = 126619, nw = (n_harmonics+1)*nw_harmonic
+  integer,parameter :: nt = 63310, nw = (n_harmonics+1)*nw_harmonic
+
   real(8), parameter ::   omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
   real(8), parameter :: wi = 0d0, wf = (n_harmonics+1)*omega0
   real(8), parameter :: dw = (wf- wi)/nw
@@ -20,7 +24,8 @@ program main
   end do
   dt = tt(1)-tt(0)
 
-  tpulse0 = 10d0*2d0*pi/omega0
+!  tpulse0 = 10d0*2d0*pi/omega0
+  Tpulse0 = 0.5d0*pi*(80d0/fs)/acos((0.5d0)**(1d0/8d0))
   window = 0d0
   do it = 0,nt
     ss = tt(it) -0.5d0*tpulse0
