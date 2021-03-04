@@ -25,6 +25,10 @@ module global_variables
   real(8) :: omega0, Efield0, Tpulse0
   real(8),allocatable :: Efield_t(:)
 
+! intra-inter band transition decomposition
+  logical,parameter :: if_intra_inter_decomp =.true.
+  real(8),allocatable :: xx_mat(:,:)
+
 end module global_variables
 !-------------------------------------------------------------------------------
 program main
@@ -57,7 +61,7 @@ subroutine input
   t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nelec = 1
+  nelec = 64
   nsite = 2*nelec+1
 
 ! laser fields
@@ -145,6 +149,8 @@ subroutine time_propagation
 
   call init_laser_field
 
+  if(if_intra_inter_decomp)call init_intra_inter_decomp
+
   open(20,file='Et_Dt.out')
   open(21,file='nex_t.out')
   do it = 0,nt
@@ -152,12 +158,16 @@ subroutine time_propagation
     call calc_dipole(dip)
     write(20,"(999e26.16e3)")it*dt,Efield_t(it),dip
 
-    if(mod(it,100)==0 .or. it == nt)then
+    if(mod(it,1000)==0 .or. it == nt)then
       call calc_nex(ngs, nex)
-      write(21,"(999e26.16e3)")it*dt,ngs,nex
+      write(21,"(999e26.16e3)")it*dt,ngs,nex,ngs+nex
     end if
 
-    call dt_evolve(it)
+    if(if_intra_inter_decomp)then
+      call dt_evolve_intra_inter_decmp(it)
+    else
+      call dt_evolve(it)
+    end if
 
   end do
   close(20)
@@ -248,21 +258,95 @@ subroutine calc_nex(ngs, nex)
   use global_variables
   implicit none
   real(8),intent(out) :: ngs, nex
-  real(8) :: occ_t(0:nelec-1)
+  real(8) :: occ_t(0:nsite-1)
   integer :: ib1, ib2
 
   occ_t = 0d0
 
 !$openmp parallel do private(ib1, ib2)
-  do ib1 =0 , nelec-1
+  do ib1 =0 , nsite-1
     do ib2 = 0, nelec-1
       occ_t(ib1) = occ_t(ib1) + abs(sum(phi_gs(:,ib1)*zpsi(:,ib2)))**2
     end do
   end do
 
-  ngs = sum(occ_t)/nelec
-  nex = 1d0 -ngs
+  ngs = sum(occ_t(0:nelec-1))/nelec
+  nex = sum(occ_t(nelec:nsite-1))/nelec
   
   
 end subroutine calc_nex
+!-------------------------------------------------------------------------------
+subroutine init_intra_inter_decomp
+  use global_variables
+  implicit none
+  integer :: ib1, ib2
+
+  allocate(xx_mat(0:nsite-1,0:nsite-1))
+  xx_mat = 0d0
+
+  do ib1 = 0, nsite-1
+    do ib2 = ib1, nsite-1
+      xx_mat(ib1,ib2) = sum(phi_gs(:,ib1)*phi_gs(:,ib2)*xx(:))
+      xx_mat(ib2,ib1) = xx_mat(ib1,ib2)
+    end do
+  end do
+
+end subroutine init_intra_inter_decomp
+!-------------------------------------------------------------------------------
+subroutine dt_evolve_intra_inter_decmp(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  integer,parameter :: nexp = 6
+  complex(8) :: zfact
+  integer :: istate, jstate, iexp
+  complex(8) :: zc(0:nsite-1, 0:nelec-1),zct(0:nsite-1, 0:nelec-1),zhct(0:nsite-1, 0:nelec-1)
+  real(8) :: vpot_xx(0:nsite-1,0:nsite-1)
+
+
+
+!$openmp parallel do private(istate,jstate) collapse(2)
+  do istate = 0, nelec-1
+    do jstate = 0, nsite-1
+      zc(jstate,istate) = sum(phi_gs(:,jstate)*zpsi(:,istate))
+    end do
+  end do
+
+  vpot_xx = Efield_t(it)*xx_mat
+  zct = zc
+  zfact = 1d0
+  do iexp = 1, nexp
+    zfact = zfact*(-zI*0.5d0*dt)/iexp
+    zhct = matmul(vpot_xx,zct)
+    zc = zc + zfact*zhct
+    zct = zhct
+  end do
+
+!$openmp parallel do
+  do jstate = 0, nsite-1
+    zc(jstate,:) = zc(jstate,:)*exp(-zi*dt*sp_energy(jstate))
+  end do
+
+  vpot_xx = Efield_t(it+1)*xx_mat
+  zct = zc
+  zfact = 1d0
+  do iexp = 1, nexp
+    zfact = zfact*(-zI*0.5d0*dt)/iexp
+    zhct = matmul(vpot_xx,zct)
+    zc = zc + zfact*zhct
+    zct = zhct
+  end do
+
+
+  zpsi(:,:) =  0d0
+!$openmp parallel do private(istate,jstate)
+  do istate = 0, nelec-1
+    do jstate = 0, nsite-1
+      zpsi(:,istate) = zpsi(:,istate) + phi_gs(:,jstate)*zc(jstate,istate)
+    end do
+  end do
+
+end subroutine dt_evolve_intra_inter_decmp
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
