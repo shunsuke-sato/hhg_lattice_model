@@ -26,8 +26,10 @@ module global_variables
   real(8),allocatable :: Efield_t(:)
 
 ! intra-inter band transition decomposition
-  logical,parameter :: if_intra_inter_decomp =.true.
+  logical,parameter :: if_intra_inter_decomp =.false. !.true.
+  logical,parameter :: if_tern_off_intraband =.false. !.true.
   real(8),allocatable :: xx_mat(:,:)
+  real(8),allocatable :: phi_xx(:,:),xx_eig(:)
 
 end module global_variables
 !-------------------------------------------------------------------------------
@@ -61,7 +63,7 @@ subroutine input
   t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nelec = 64
+  nelec = 16
   nsite = 2*nelec+1
 
 ! laser fields
@@ -280,6 +282,15 @@ subroutine init_intra_inter_decomp
   use global_variables
   implicit none
   integer :: ib1, ib2
+!==LAPACK==
+  real(8),allocatable :: amat_t(:,:)
+  real(8),allocatable :: work(:)
+  integer :: lwork, info
+
+  lwork = 4*nsite**2 + 16*nsite
+  allocate(work(lwork))
+  allocate(amat_t(0:nsite-1,0:nsite-1))
+!==LAPACK==
 
   allocate(xx_mat(0:nsite-1,0:nsite-1))
   xx_mat = 0d0
@@ -290,6 +301,34 @@ subroutine init_intra_inter_decomp
       xx_mat(ib2,ib1) = xx_mat(ib1,ib2)
     end do
   end do
+
+! Start:filter
+  if(if_tern_off_intraband)then
+    do ib1 = 0, nelec-1
+      do ib2 = 0, nelec-1
+        xx_mat(ib1,ib2) = 0d0
+      end do
+    end do
+
+    do ib1 = nelec, nsite-1
+      do ib2 = nelec, nsite-1
+        xx_mat(ib1,ib2) = 0d0
+      end do
+    end do
+  end if
+! End:filter
+
+  open(20,file='dip_mat_diag.out')
+  do ib1 = 0, nsite-1
+    write(20,"(I7,2x,e16.6e3)")ib1,xx_mat(ib1,ib1)
+  end do
+  close(20)
+
+  allocate(phi_xx(0:nsite-1,0:nsite-1),xx_eig(0:nsite-1))
+  amat_t = xx_mat
+  call dsyev('V','U',nsite,amat_t,nsite,xx_eig,work,lwork,info)
+  phi_xx = amat_t
+
 
 end subroutine init_intra_inter_decomp
 !-------------------------------------------------------------------------------
@@ -302,6 +341,7 @@ subroutine dt_evolve_intra_inter_decmp(it)
   integer :: istate, jstate, iexp
   complex(8) :: zc(0:nsite-1, 0:nelec-1),zct(0:nsite-1, 0:nelec-1),zhct(0:nsite-1, 0:nelec-1)
   real(8) :: vpot_xx(0:nsite-1,0:nsite-1)
+  complex(8) :: zc_xx(0:nsite-1, 0:nelec-1)
 
 
 
@@ -312,31 +352,53 @@ subroutine dt_evolve_intra_inter_decmp(it)
     end do
   end do
 
-  vpot_xx = Efield_t(it)*xx_mat
-  zct = zc
-  zfact = 1d0
-  do iexp = 1, nexp
-    zfact = zfact*(-zI*0.5d0*dt)/iexp
-    zhct = matmul(vpot_xx,zct)
-    zc = zc + zfact*zhct
-    zct = zhct
+!$openmp parallel do private(istate,jstate) collapse(2)
+  do istate = 0, nelec-1
+    do jstate = 0, nsite-1
+      zc_xx(jstate,istate) = sum(phi_xx(:,jstate)*zc(:,istate))
+    end do
   end do
+
+!$openmp parallel do
+  do jstate = 0, nsite-1
+    zc_xx(jstate,:) = zc_xx(jstate,:)*exp(-zi*0.5d0*dt*Efield_t(it)*xx_eig(jstate))
+  end do
+
+  zc= 0d0
+!$openmp parallel do private(istate,jstate)
+  do istate = 0, nelec-1
+    do jstate = 0, nsite-1
+      zc(:,istate) = zc(:,istate) + phi_xx(:,jstate)*zc_xx(jstate,istate)
+    end do
+  end do
+
 
 !$openmp parallel do
   do jstate = 0, nsite-1
     zc(jstate,:) = zc(jstate,:)*exp(-zi*dt*sp_energy(jstate))
   end do
 
-  vpot_xx = Efield_t(it+1)*xx_mat
-  zct = zc
-  zfact = 1d0
-  do iexp = 1, nexp
-    zfact = zfact*(-zI*0.5d0*dt)/iexp
-    zhct = matmul(vpot_xx,zct)
-    zc = zc + zfact*zhct
-    zct = zhct
+
+
+!$openmp parallel do private(istate,jstate) collapse(2)
+  do istate = 0, nelec-1
+    do jstate = 0, nsite-1
+      zc_xx(jstate,istate) = sum(phi_xx(:,jstate)*zc(:,istate))
+    end do
   end do
 
+!$openmp parallel do
+  do jstate = 0, nsite-1
+    zc_xx(jstate,:) = zc_xx(jstate,:)*exp(-zi*0.5d0*dt*Efield_t(it+1)*xx_eig(jstate))
+  end do
+
+  zc= 0d0
+!$openmp parallel do private(istate,jstate)
+  do istate = 0, nelec-1
+    do jstate = 0, nsite-1
+      zc(:,istate) = zc(:,istate) + phi_xx(:,jstate)*zc_xx(jstate,istate)
+    end do
+  end do
 
   zpsi(:,:) =  0d0
 !$openmp parallel do private(istate,jstate)
