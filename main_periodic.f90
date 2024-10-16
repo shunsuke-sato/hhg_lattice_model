@@ -1,0 +1,192 @@
+module global_variables
+
+! mathematical constants
+  real(8),parameter :: pi = 4d0*atan(1d0)
+  complex(8),parameter :: zi = (0d0, 1d0)
+
+! physical parameter
+  real(8),parameter :: fs=0.024189d0
+
+
+! physical system
+  integer :: nk
+  real(8) :: delta_gap, t_hop
+  real(8) :: mass, lattice_a
+  complex(8),allocatable :: zpsi(:,:)
+  real(8),allocatable :: phi_gs(:,:,:),sp_energy(:,:)
+  real(8),allocatable :: kn(:)
+
+
+! time propagation
+  integer :: nt
+  real(8) :: Tprop, dt
+
+! laser fields
+  real(8) :: omega0, Efield0, Tpulse0
+  real(8),allocatable :: Efield_t(:)
+
+
+
+end module global_variables
+!-------------------------------------------------------------------------------
+program main
+  use global_variables
+  implicit none
+
+  call input
+  call preparation
+
+!  stop
+  call time_propagation
+
+end program main
+!-------------------------------------------------------------------------------
+subroutine input
+  use global_variables
+  implicit none
+
+! system parameters
+! CdS: PRB 39, 10935 (1989)
+  lattice_a = 5.82d0/0.529d0
+  mass = 1d0/(1d0/0.18d0+1d0/0.53d0)
+  delta_gap = delta_gap0
+
+  write(*,*)"lattice_a=",lattice_a
+  write(*,*)"mass     =",mass
+  write(*,*)"delta_gap=",delta_gap
+
+  t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
+  write(*,*)"t_hop    =",t_hop
+
+  nk = 32
+
+! laser fields
+  omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
+  Efield0 = 20d6 *(0.529d-8/27.2114d0) ! MV/cm
+!  Tpulse0 = 10d0*2d0*pi/omega0
+  Tpulse0 = 0.5d0*pi*(80d0/fs)/acos((0.5d0)**(1d0/8d0))
+  write(*,"(A,2x,e26.16e3)")"Tpulse0 [fs]=",Tpulse0*fs
+
+! time-propagation
+  Tprop = Tpulse0
+  dt = 0.2d0
+  nt = aint(Tprop/dt)+1
+  dt = Tprop/nt
+  write(*,"(A,2x,e26.16e3)")"refined dt=",dt
+  write(*,"(A,2x,I7)")"nt        =",nt
+
+end subroutine input
+!-------------------------------------------------------------------------------
+subroutine preparation
+  use global_variables
+  implicit none
+  integer :: ik
+  real(8) :: ham(2,2)
+  allocate(zpsi(2,0:nk-1), phi_gs(2,2,0:nk-1),sp_energy(2,0:nk-1))
+  allocate(kn(0:nk-1))
+
+  do ik = 0, nk-1
+    kn(ik) = (2d0/lattice_a)*(pi/nk)*ik
+  end do
+
+
+  do ik = 0, nk-1
+    ham(1,1) = -0.5d0*delta_gap
+    ham(1,2) = -2d0*t_hop*cos(0.5d0*kn(ik))
+    ham(2,1) = ham(1,2)
+    ham(2,2) = 0.5d0*delta_gap
+
+    call diag_2x2(ham, phi_gs(:,:,ik), sp_energy(:,ik))
+    zpsi(:,ik) = phi_gs(:,2,ik)
+  end do
+
+end subroutine preparation
+!-------------------------------------------------------------------------------
+subroutine diag_2x2(mat, vec, lambda)
+  implicit none
+  real(8),intent(in) :: mat(2,2)
+  real(8),intent(out) :: vec(2,2)
+  real(8),intent(out) :: lambda(2)
+  real(8) :: a, b, c
+  real(8) :: ss
+
+  vec = 0d0
+  lambda = 0d0
+
+  a = mat(1,1)
+  b = mat(1,2)
+  c = mat(2,2)
+  
+
+  lambda(1) = 0.5d0*((a+c) + sqrt((a-c)**2 + 4d0*b**2)) 
+  lambda(2) = 0.5d0*((a+c) - sqrt((a-c)**2 + 4d0*b**2)) 
+
+
+  if( abs(lambda(1) - a) > abs(lambda(1) - c)  ) then
+    vec(2,1) = 1d0
+    vec(1,1) = b/(lambda(1)-a)
+
+    vec(1,2) = 1d0
+    vec(2,2) = b/(lambda(2)-c)
+  else
+    vec(1,1) = 1d0
+    vec(2,1) = b/(lambda(1)-c)
+
+    vec(2,2) = 1d0
+    vec(1,2) = b/(lambda(2)-a)
+  end if
+
+  ss = sum(abs(vec(:,1))**2)
+  vec(:,1) = vec(:,1)/sqrt(ss)
+
+  ss = sum(abs(vec(:,2))**2)
+  vec(:,2) = vec(:,2)/sqrt(ss)
+
+end subroutine diag_2x2
+!-------------------------------------------------------------------------------
+subroutine diag_2x2_complex(zmat, zvec, lambda)
+  implicit none
+  complex(8),intent(in) :: zmat(2,2)
+  complex(8),intent(out) :: zvec(2,2)
+  real(8),intent(out) :: lambda(2)
+  real(8) :: a, c
+  complex(8) :: zb
+  real(8) :: ss
+
+  zvec = 0d0
+  lambda = 0d0
+
+  a  = zmat(1,1)
+  c  = zmat(2,2)
+  zb = zmat(1,2)
+
+  lambda(1) = 0.5d0*((a+c) + sqrt((a-c)**2 + 4d0*abs(zb)**2)) 
+  lambda(2) = 0.5d0*((a+c) - sqrt((a-c)**2 + 4d0*abs(zb)**2)) 
+
+
+  if( abs(lambda(1) - a) > abs(lambda(1) - c)  ) then
+    zvec(2,1) = 1d0
+    zvec(1,1) = zb/(lambda(1)-a)
+
+    zvec(1,2) = 1d0
+    zvec(2,2) = conjg(zb)/(lambda(2)-c)
+  else
+    zvec(1,1) = 1d0
+    zvec(2,1) = conjg(zb)/(lambda(1)-c)
+
+    zvec(2,2) = 1d0
+    zvec(1,2) = zb/(lambda(2)-a)
+  end if
+
+  
+  ss = sum(abs(zvec(:,1))**2)
+  zvec(:,1) = zvec(:,1)/sqrt(ss)
+
+  ss = sum(abs(zvec(:,2))**2)
+  zvec(:,2) = zvec(:,2)/sqrt(ss)
+
+end subroutine diag_2x2_complex
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
