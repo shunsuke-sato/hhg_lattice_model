@@ -12,6 +12,7 @@ module global_variables
   integer :: nk
   real(8) :: delta_gap, t_hop
   real(8) :: mass, lattice_a
+  real(8),allocatable :: ham_kt(:,:,:)
   complex(8),allocatable :: zpsi(:,:)
   real(8),allocatable :: phi_gs(:,:,:),sp_energy(:,:)
   real(8),allocatable :: kn(:)
@@ -23,7 +24,7 @@ module global_variables
 
 ! laser fields
   real(8) :: omega0, Efield0, Tpulse0
-  real(8),allocatable :: Efield_t(:)
+  real(8),allocatable :: Efield_t(:), Afield_t(:)
 
 
 
@@ -82,6 +83,8 @@ subroutine preparation
   implicit none
   integer :: ik
   real(8) :: ham(2,2)
+
+  allocate(ham_kt(2,2,0:nk-1))
   allocate(zpsi(2,0:nk-1), phi_gs(2,2,0:nk-1),sp_energy(2,0:nk-1))
   allocate(kn(0:nk-1))
 
@@ -101,6 +104,107 @@ subroutine preparation
   end do
 
 end subroutine preparation
+!-------------------------------------------------------------------------------
+subroutine time_propagation
+  use global_variables
+  implicit none
+  integer :: it
+  real(8) :: current
+  real(8) :: ngs, nex
+
+  call init_laser_field
+
+
+  do it = 0,nt
+
+    call dt_evolve(it)
+
+  end do
+
+
+end subroutine time_propagation
+!-------------------------------------------------------------------------------
+subroutine dt_evolve(it)
+  use global_variables
+  implicit none
+  integer :: ik
+  real(8) :: ham(2,2), vec(2,2), lambda(2,2)
+  complex(8) :: zvec(2)
+  real(8) :: tt, kt
+
+
+  do ik = 0, nk-1
+
+! propagation from dt*it to dt*(it+0.5)
+    tt = dt*it
+
+    kt = kn(ik) + Afield_t(it)
+    ham(1,1) = -0.5d0*delta_gap
+    ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+    ham(1,2) = ham_kt(2,1,ik)
+    ham(2,2) =  0.5d0*delta_gap
+
+    call diag_2x2(ham, vec, lambda)
+    
+    zvec(1) = vec(1,1)*zpsi(1,ik)+ vec(2,1)*zpsi(2,ik)
+    zvec(2) = vec(1,2)*zpsi(1,ik)+ vec(2,2)*zpsi(2,ik)
+    zvec(1) = exp(-zi*0.5*dt*lambda(1))*zvec(1)
+    zvec(2) = exp(-zi*0.5*dt*lambda(2))*zvec(2)
+
+    zpsi(1,ik) = vec(1,1)*zvec(1) + vec(1,2)*zvec(2)
+    zpsi(2,ik) = vec(2,1)*zvec(1) + vec(2,2)*zvec(2)
+
+
+! propagation from dt*(it+0.5) to dt*(it+1)
+    tt = dt*it
+
+    kt = kn(ik) + Afield_t(it+1)
+    ham(1,1) = -0.5d0*delta_gap
+    ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+    ham(1,2) = ham_kt(2,1,ik)
+    ham(2,2) =  0.5d0*delta_gap
+
+    call diag_2x2(ham, vec, lambda)
+    
+    zvec(1) = vec(1,1)*zpsi(1,ik)+ vec(2,1)*zpsi(2,ik)
+    zvec(2) = vec(1,2)*zpsi(1,ik)+ vec(2,2)*zpsi(2,ik)
+    zvec(1) = exp(-zi*0.5*dt*lambda(1))*zvec(1)
+    zvec(2) = exp(-zi*0.5*dt*lambda(2))*zvec(2)
+
+    zpsi(1,ik) = vec(1,1)*zvec(1) + vec(1,2)*zvec(2)
+    zpsi(2,ik) = vec(2,1)*zvec(1) + vec(2,2)*zvec(2)
+
+  end do
+
+
+
+end subroutine dt_evolve
+!-------------------------------------------------------------------------------
+subroutine init_laser_field
+  use global_variables
+  implicit none
+  integer :: it
+  real(8) :: tt, ss
+
+  allocate(Efield_t(-1:nt+1),Afield_t(-1:nt+1))
+  Efield_t = 0d0
+  Afield_t = 0d0
+
+  do it = 0, nt+1
+    tt = dt*it
+    ss = (tt - 0.5d0*Tpulse0)
+    if(abs(ss)<= 0.5d0*Tpulse0)then
+      Afield_t(it) = -(Efield0/omega0)*cos(omega0*ss)*cos(pi*ss/Tpulse0)**4
+    end if
+        
+  end do
+
+  do it = 0, nt
+    Efield_t(it) = 0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
+  end do
+
+end subroutine init_laser_field
+!-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
 subroutine diag_2x2(mat, vec, lambda)
   implicit none
