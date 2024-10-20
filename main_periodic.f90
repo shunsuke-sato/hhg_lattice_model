@@ -50,22 +50,22 @@ subroutine input
 ! CdS: PRB 39, 10935 (1989)
   lattice_a = 5.82d0/0.529d0
   mass = 1d0/(1d0/0.18d0+1d0/0.53d0)
-  delta_gap = delta_gap0
+  delta_gap = 9d0/27.2114d0
 
   write(*,*)"lattice_a=",lattice_a
   write(*,*)"mass     =",mass
   write(*,*)"delta_gap=",delta_gap
 
-  t_hop     = 0.5d0/lattice_a*sqrt(delta_gap0/mass)
+  t_hop     = 0.5d0/lattice_a*sqrt(delta_gap/mass)
   write(*,*)"t_hop    =",t_hop
 
   nk = 32
 
 ! laser fields
-  omega0 = 0.35424d0/27.2114d0 ! 3.5 mum
-  Efield0 = 20d6 *(0.529d-8/27.2114d0) ! MV/cm
+  omega0 = 1.55d0/27.2114d0 ! 3.5 mum
+  Efield0 = 1d4 *(0.529d-8/27.2114d0) ! MV/cm
 !  Tpulse0 = 10d0*2d0*pi/omega0
-  Tpulse0 = 0.5d0*pi*(80d0/fs)/acos((0.5d0)**(1d0/8d0))
+  Tpulse0 = 0.5d0*pi*(40d0/fs)/acos((0.5d0)**(1d0/8d0))
   write(*,"(A,2x,e26.16e3)")"Tpulse0 [fs]=",Tpulse0*fs
 
 ! time-propagation
@@ -114,23 +114,29 @@ subroutine time_propagation
 
   call init_laser_field
 
-
+  open(20,file='current.out')
   do it = 0,nt
+
+    call calc_current(current,it)
+    write(20,"(999e26.16e3)")it*dt,Afield_t(it),current
 
     call dt_evolve(it)
 
   end do
-
+  close(20)
 
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
 subroutine dt_evolve(it)
   use global_variables
   implicit none
+  integer,intent(in) :: it
   integer :: ik
-  real(8) :: ham(2,2), vec(2,2), lambda(2,2)
+  real(8) :: ham(2,2), vec(2,2), lambda(2)
   complex(8) :: zvec(2)
   real(8) :: tt, kt
+
+
 
 
   do ik = 0, nk-1
@@ -177,8 +183,32 @@ subroutine dt_evolve(it)
   end do
 
 
-
 end subroutine dt_evolve
+!-------------------------------------------------------------------------------
+subroutine calc_current(jt_t,it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  real(8),intent(out) :: jt_t
+  integer :: ik
+  real(8) :: pmat
+  real(8) :: tt, kt
+
+  tt = dt*it
+
+
+  jt_t = 0d0
+  do ik = 0, nk-1
+
+    kt = kn(ik) + Afield_t(it)
+    pmat = 2d0*t_hop*sin(0.5d0*lattice_a*kt)*0.5d0*lattice_a
+
+    jt_t = jt_t + conjg(zpsi(1,ik))*pmat*zpsi(2,ik) + conjg(zpsi(2,ik))*pmat*zpsi(1,ik)
+  end do
+
+  jt_t = jt_t/nk
+
+end subroutine calc_current
 !-------------------------------------------------------------------------------
 subroutine init_laser_field
   use global_variables
