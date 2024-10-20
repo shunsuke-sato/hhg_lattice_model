@@ -59,13 +59,14 @@ subroutine input
   t_hop     = 0.5d0/lattice_a*sqrt(delta_gap/mass)
   write(*,*)"t_hop    =",t_hop
 
-  nk = 32
+  nk = 2
 
 ! laser fields
   omega0 = 1.55d0/27.2114d0 ! 3.5 mum
   Efield0 = 1d4 *(0.529d-8/27.2114d0) ! MV/cm
+!  Efield0 = 0d0
 !  Tpulse0 = 10d0*2d0*pi/omega0
-  Tpulse0 = 0.5d0*pi*(40d0/fs)/acos((0.5d0)**(1d0/8d0))
+  Tpulse0 = 0.5d0*pi*(10d0/fs)/acos((0.5d0)**(1d0/8d0))
   write(*,"(A,2x,e26.16e3)")"Tpulse0 [fs]=",Tpulse0*fs
 
 ! time-propagation
@@ -95,12 +96,13 @@ subroutine preparation
 
   do ik = 0, nk-1
     ham(1,1) = -0.5d0*delta_gap
-    ham(1,2) = -2d0*t_hop*cos(0.5d0*kn(ik))
+    ham(1,2) = -2d0*t_hop*cos(0.5d0*lattice_a*kn(ik))
     ham(2,1) = ham(1,2)
     ham(2,2) = 0.5d0*delta_gap
 
     call diag_2x2(ham, phi_gs(:,:,ik), sp_energy(:,ik))
     zpsi(:,ik) = phi_gs(:,2,ik)
+    write(*,*)phi_gs(:,2,ik) ! debug
   end do
 
 end subroutine preparation
@@ -110,20 +112,25 @@ subroutine time_propagation
   implicit none
   integer :: it
   real(8) :: current
-  real(8) :: ngs, nex
+  real(8) :: nex_bloch,nex_houston,nex_pol_houston
 
   call init_laser_field
 
   open(20,file='current.out')
+  open(21,file='nex.out')
   do it = 0,nt
 
     call calc_current(current,it)
-    write(20,"(999e26.16e3)")it*dt,Afield_t(it),current
+    write(20,"(999e26.16e3)")it*dt,Afield_t(it),Efield_t(it),current
+
+    call calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
+    write(21,"(999e26.16e3)")it*dt,nex_bloch,nex_houston,nex_pol_houston
 
     call dt_evolve(it)
 
   end do
   close(20)
+  close(21)
 
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
@@ -147,7 +154,7 @@ subroutine dt_evolve(it)
     kt = kn(ik) + Afield_t(it)
     ham(1,1) = -0.5d0*delta_gap
     ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
-    ham(1,2) = ham_kt(2,1,ik)
+    ham(1,2) = ham(2,1)
     ham(2,2) =  0.5d0*delta_gap
 
     call diag_2x2(ham, vec, lambda)
@@ -167,7 +174,7 @@ subroutine dt_evolve(it)
     kt = kn(ik) + Afield_t(it+1)
     ham(1,1) = -0.5d0*delta_gap
     ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
-    ham(1,2) = ham_kt(2,1,ik)
+    ham(1,2) = ham(2,1)
     ham(2,2) =  0.5d0*delta_gap
 
     call diag_2x2(ham, vec, lambda)
@@ -209,6 +216,42 @@ subroutine calc_current(jt_t,it)
   jt_t = jt_t/nk
 
 end subroutine calc_current
+!-------------------------------------------------------------------------------
+subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  real(8),intent(out) :: nex_bloch, nex_houston,nex_pol_houston
+  integer :: ik
+  real(8) :: kt
+  real(8) :: ham(2,2), vec(2,2), lambda(2)
+
+! Bloch projection
+  nex_bloch = 0d0
+  do ik = 0, nk-1
+    nex_bloch = nex_bloch &
+        + abs(phi_gs(1,1,ik)*zpsi(1,ik)+phi_gs(2,1,ik)*zpsi(2,ik))**2
+  end do
+
+
+! Houston projection
+  nex_houston = 0d0
+  do ik = 0, nk-1
+
+    kt = kn(ik) + Afield_t(it)
+    ham(1,1) = -0.5d0*delta_gap
+    ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+    ham(1,2) = ham(2,1)
+    ham(2,2) =  0.5d0*delta_gap
+
+    call diag_2x2(ham, vec, lambda)
+
+    nex_houston = nex_houston + abs(vec(1,1)*zpsi(1,ik)+vec(2,1)*zpsi(2,ik))**2
+  end do
+
+
+
+end subroutine calc_nex
 !-------------------------------------------------------------------------------
 subroutine init_laser_field
   use global_variables
