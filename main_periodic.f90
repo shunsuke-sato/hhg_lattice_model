@@ -223,8 +223,9 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
   integer,intent(in) :: it
   real(8),intent(out) :: nex_bloch, nex_houston,nex_pol_houston
   integer :: ik
-  real(8) :: kt
+  real(8) :: kt, dkdt, phi, xx, yy, factor
   real(8) :: ham(2,2), vec(2,2), lambda(2)
+  real(8) :: duc_dk(2), uv(2)
 
 ! Bloch projection
   nex_bloch = 0d0
@@ -249,7 +250,30 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
     nex_houston = nex_houston + abs(vec(1,1)*zpsi(1,ik)+vec(2,1)*zpsi(2,ik))**2
   end do
 
+! polarized Houston projection
+  nex_pol_houston = 0d0
+  do ik = 0, nk-1
 
+    kt = kn(ik) + Afield_t(it)
+    dkdt = 0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
+    phi = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+    xx =  phi/(0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))
+    yy = -phi/(0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))
+
+    duc_dk(1)=-xx/(sqrt(1d0+xx**2))**3*xx + 1d0/sqrt(1d0+xx**2)**3
+    duc_dk(2)=-xx/(sqrt(1d0+xx**2))**3 
+    factor = 1d0/(0.5d0*delta_gap + sqrt(delta_gap**2/4d0 + phi**2))
+    factor = factor - phi**2/( &
+        (0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))**2 &
+        *sqrt(delta_gap**2/4d0+phi**2) &
+        )
+
+    factor = factor *lattice_a*t_hop*sin(0.5d0*lattice_a*kt)
+
+    duc_dk = duc_dk*factor
+    
+
+  end do
 
 end subroutine calc_nex
 !-------------------------------------------------------------------------------
