@@ -225,7 +225,10 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
   integer :: ik
   real(8) :: kt, dkdt, phi, xx, yy, factor
   real(8) :: ham(2,2), vec(2,2), lambda(2)
-  real(8) :: duc_dk(2), uv(2)
+  real(8) :: duc_dk(2), uv(2), uc(2)
+  real(8) :: eps_v, eps_c
+  complex(8) :: zham(2,2), zvec(2,2)
+  complex(8) :: zp_houston_states(2,2)
 
 ! Bloch projection
   nex_bloch = 0d0
@@ -233,7 +236,7 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
     nex_bloch = nex_bloch &
         + abs(phi_gs(1,1,ik)*zpsi(1,ik)+phi_gs(2,1,ik)*zpsi(2,ik))**2
   end do
-
+  nex_bloch = nex_bloch/nk
 
 ! Houston projection
   nex_houston = 0d0
@@ -249,6 +252,7 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
 
     nex_houston = nex_houston + abs(vec(1,1)*zpsi(1,ik)+vec(2,1)*zpsi(2,ik))**2
   end do
+  nex_houston = nex_houston/nk
 
 ! polarized Houston projection
   nex_pol_houston = 0d0
@@ -259,6 +263,9 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
     phi = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
     xx =  phi/(0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))
     yy = -phi/(0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))
+
+    eps_c =  sqrt(delta_gap**2/4d0 + phi**2)
+    eps_v = -sqrt(delta_gap**2/4d0 + phi**2)
 
     duc_dk(1)=-xx/(sqrt(1d0+xx**2))**3*xx + 1d0/sqrt(1d0+xx**2)**3
     duc_dk(2)=-xx/(sqrt(1d0+xx**2))**3 
@@ -271,9 +278,30 @@ subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
     factor = factor *lattice_a*t_hop*sin(0.5d0*lattice_a*kt)
 
     duc_dk = duc_dk*factor
+
+    uc(1) =  xx/sqrt(1d0+xx**2)
+    uc(2) = 1d0/sqrt(1d0+xx**2)
+
+    uv(1) = 1d0/sqrt(1d0+yy**2)
+    uv(2) =  yy/sqrt(1d0+yy**2)
     
+    zham(1,1) = eps_v
+    zham(1,2) = -zi*sum(uv*duc_dk)*dkdt
+    zham(2,1) = conjg(zham(1,2))
+    zham(2,2) = eps_c
+
+    call diag_2x2_complex(zham, zvec, lambda)
+
+    zp_houston_states(:,1) = uv*zvec(1,1) + uc*zvec(2,1)
+    zp_houston_states(:,2) = uv*zvec(1,2) + uc*zvec(2,2)
+
+    nex_pol_houston = nex_pol_houston + abs(&
+        sum(conjg(zp_houston_states(:,1))*zpsi(:,ik)) &
+        )**2
 
   end do
+  nex_pol_houston = nex_pol_houston/nk
+
 
 end subroutine calc_nex
 !-------------------------------------------------------------------------------
