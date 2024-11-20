@@ -23,7 +23,7 @@ module global_variables
   real(8) :: Tprop, dt
 
 ! laser fields
-  real(8) :: omega0, Efield0, Tpulse0
+  real(8) :: omega0, Epulsed0, Tpulse0
   real(8),allocatable :: Efield_t(:), Afield_t(:)
 
 
@@ -63,11 +63,13 @@ subroutine input
 
 ! laser fields
   omega0 = 1.55d0/27.2114d0 ! 3.5 mum
-  Efield0 = 1d4 *(0.529d-8/27.2114d0) ! MV/cm
-!  Efield0 = 0d0
-!  Tpulse0 = 10d0*2d0*pi/omega0
+  Epulse0 = 1d4*(0.529d-8/27.2114d0) ! MV/cm
+
   Tpulse0 = 0.5d0*pi*(10d0/fs)/acos((0.5d0)**(1d0/8d0))
   write(*,"(A,2x,e26.16e3)")"Tpulse0 [fs]=",Tpulse0*fs
+
+  Edc0 = 0d0*(0.529d-8/27.2114d0) ! MV/cm
+  Tdc0 = 10d0/fs ! fs
 
 ! time-propagation
   Tprop = Tpulse0
@@ -315,14 +317,31 @@ subroutine init_laser_field
   Efield_t = 0d0
   Afield_t = 0d0
 
-  do it = 0, nt+1
-    tt = dt*it
-    ss = (tt - 0.5d0*Tpulse0)
-    if(abs(ss)<= 0.5d0*Tpulse0)then
-      Afield_t(it) = -(Efield0/omega0)*cos(omega0*ss)*cos(pi*ss/Tpulse0)**4
-    end if
-        
-  end do
+
+  if(Epulse0 /= 0d0)then
+    do it = 0, nt+1
+      tt = dt*it
+      ss = (tt - 0.5d0*Tpulse0)
+      if(abs(ss)<= 0.5d0*Tpulse0)then
+        Afield_t(it) = Afield_t(it) &
+            -(Epulsed0/omega0)*sin(omega0*ss)*cos(pi*ss/Tpulse0)**4
+      end if
+    end do
+  end if
+
+  if(Edc0 /= 0d0)then
+    do it = 0, nt+1
+      tt = dt*it
+      if(tt<= Tdc0)then
+        Afield_t(it) = Afield_t(it) &
+            -0.5d0*Edc0*(tt/Tdc0)**2*Tdc0
+      else
+        Afield_t(it) = Afield_t(it) &
+            -Edc0*(tt-Tdc0) -0.5d0*Edc0*Tdc0
+      end if
+    end do
+  end if
+
 
   do it = 0, nt
     Efield_t(it) = -0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
