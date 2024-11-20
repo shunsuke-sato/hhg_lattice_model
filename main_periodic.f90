@@ -325,7 +325,7 @@ subroutine init_laser_field
   end do
 
   do it = 0, nt
-    Efield_t(it) = 0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
+    Efield_t(it) = -0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
   end do
 
 end subroutine init_laser_field
