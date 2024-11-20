@@ -47,10 +47,10 @@ subroutine input
   implicit none
 
 ! system parameters
-! CdS: PRB 39, 10935 (1989)
-  lattice_a = 5.82d0/0.529d0
-  mass = 1d0/(1d0/0.18d0+1d0/0.53d0)
-  delta_gap = 9d0/27.2114d0
+! GaAs
+  lattice_a = 5.65d0/0.529d0
+  mass = 1d0/(1d0/0.067d0+1d0/0.08d0)
+  delta_gap = 1.52d0/27.2114d0
 
   write(*,*)"lattice_a=",lattice_a
   write(*,*)"mass     =",mass
