@@ -128,17 +128,19 @@ subroutine preparation
 
   if(if_q_master_eq)then
     allocate(zrho_k(2,2,0:nk-1))
-    if(sp_energy(1,ik) > sp_energy(2,ik))then
-      zrho_k(1,1,ik) = phi_gs(1,2,ik)*phi_gs(1,2,ik)
-      zrho_k(2,1,ik) = phi_gs(2,2,ik)*phi_gs(1,2,ik)
-      zrho_k(1,2,ik) = phi_gs(1,2,ik)*phi_gs(2,2,ik)
-      zrho_k(2,2,ik) = phi_gs(2,2,ik)*phi_gs(2,2,ik)
-    else
-      zrho_k(1,1,ik) = phi_gs(1,1,ik)*phi_gs(1,1,ik)
-      zrho_k(2,1,ik) = phi_gs(2,1,ik)*phi_gs(1,1,ik)
-      zrho_k(1,2,ik) = phi_gs(1,1,ik)*phi_gs(2,1,ik)
-      zrho_k(2,2,ik) = phi_gs(2,1,ik)*phi_gs(2,1,ik)
-    end if
+    do ik = 0, nk-1
+      if(sp_energy(1,ik) > sp_energy(2,ik))then
+        zrho_k(1,1,ik) = phi_gs(1,2,ik)*phi_gs(1,2,ik)
+        zrho_k(2,1,ik) = phi_gs(2,2,ik)*phi_gs(1,2,ik)
+        zrho_k(1,2,ik) = phi_gs(1,2,ik)*phi_gs(2,2,ik)
+        zrho_k(2,2,ik) = phi_gs(2,2,ik)*phi_gs(2,2,ik)
+      else
+        zrho_k(1,1,ik) = phi_gs(1,1,ik)*phi_gs(1,1,ik)
+        zrho_k(2,1,ik) = phi_gs(2,1,ik)*phi_gs(1,1,ik)
+        zrho_k(1,2,ik) = phi_gs(1,1,ik)*phi_gs(2,1,ik)
+        zrho_k(2,2,ik) = phi_gs(2,1,ik)*phi_gs(2,1,ik)
+      end if
+    end do
   end if
 
 end subroutine preparation
@@ -212,7 +214,7 @@ subroutine dt_evolve_q_master(it)
 
     zrho_tmp = matmul(transpose(vec),matmul(zrho_k(:,:,ik),vec(:,:)))
 
-    zrho_tmp(1,2) = zrho_tmp(1,2)*exp(-zi*(lambda(2)-lambda(1))*dt*0.5d0)
+    zrho_tmp(1,2) = zrho_tmp(1,2)*exp(zi*(lambda(2)-lambda(1))*dt*0.5d0)
     zrho_tmp(2,1) = conjg(zrho_tmp(1,2))
 
     zrho_k(:,:,ik) = matmul(vec, matmul(zrho_tmp,transpose(vec)))
@@ -280,7 +282,7 @@ subroutine dt_evolve_q_master(it)
 
     zrho_tmp = matmul(transpose(vec),matmul(zrho_k(:,:,ik),vec(:,:)))
 
-    zrho_tmp(1,2) = zrho_tmp(1,2)*exp(-zi*(lambda(2)-lambda(1))*dt*0.5d0)
+    zrho_tmp(1,2) = zrho_tmp(1,2)*exp(zi*(lambda(2)-lambda(1))*dt*0.5d0)
     zrho_tmp(2,1) = conjg(zrho_tmp(1,2))
 
     zrho_k(:,:,ik) = matmul(vec, matmul(zrho_tmp,transpose(vec)))
