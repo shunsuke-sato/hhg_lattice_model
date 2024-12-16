@@ -27,7 +27,14 @@ module global_variables
   real(8) :: Edc0, Tdc0
   real(8),allocatable :: Efield_t(:), Afield_t(:)
 
-
+! quantum master equation
+  logical :: if_q_master_eq 
+  real(8) :: T1_qm, T2_qm
+  complex(8),allocatable :: zrho_k(:,:,:)
+  integer, parameter :: N_PROJ_BLOCH = 0, &
+                        N_PROJ_HOUSTON = 1, &
+                        N_PROJ_P_HOUSTON = 2
+  integer,parameter :: N_PROJ_METHOD = N_PROJ_P_HOUSTON
 
 end module global_variables
 !-------------------------------------------------------------------------------
@@ -80,6 +87,12 @@ subroutine input
   write(*,"(A,2x,e26.16e3)")"refined dt=",dt
   write(*,"(A,2x,I7)")"nt        =",nt
 
+
+! quantum master equation
+  if_q_master_eq = .false.
+  T1_qm = 10d0/fs
+  T2_qm = 10d0/fs
+
 end subroutine input
 !-------------------------------------------------------------------------------
 subroutine preparation
@@ -108,6 +121,11 @@ subroutine preparation
     write(*,*)phi_gs(:,2,ik) ! debug
   end do
 
+
+  if(if_q_master_eq)then
+    allocate(zrho_k(2,2,0:nk-1))
+  end if
+
 end subroutine preparation
 !-------------------------------------------------------------------------------
 subroutine time_propagation
@@ -126,8 +144,10 @@ subroutine time_propagation
     call calc_current(current,it)
     write(20,"(999e26.16e3)")it*dt,Afield_t(it),Efield_t(it),current
 
-    call calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
-    write(21,"(999e26.16e3)")it*dt,nex_bloch,nex_houston,nex_pol_houston
+    if(.not. if_q_master_eq)then
+      call calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
+      write(21,"(999e26.16e3)")it*dt,nex_bloch,nex_houston,nex_pol_houston
+    end if
 
     call dt_evolve(it)
 
@@ -138,6 +158,229 @@ subroutine time_propagation
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
 subroutine dt_evolve(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+
+  if(if_q_master_eq)then
+    call dt_evolve_q_master(it)
+  else
+    call dt_evolve_tdse(it)
+  end if
+
+end subroutine dt_evolve
+!-------------------------------------------------------------------------------
+subroutine dt_evolve_q_master(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  integer :: ik
+  real(8) :: ham(2,2), vec(2,2), lambda(2)
+  complex(8) :: zvec(2), zrho_tmp(2,2), zrho_tmp_delta(2,2)
+  real(8) :: rho_eq(2,2)
+  real(8) :: tt, kt, dkdt
+  complex(8) :: zref_state(2,2)
+  real(8) :: ref_energy(2)
+
+  do ik = 0, nk-1
+
+! propagation from dt*it to dt*(it+0.5)
+    tt = dt*it
+
+    kt = kn(ik) + Afield_t(it)
+    ham(1,1) = -0.5d0*delta_gap
+    ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+    ham(1,2) = ham(2,1)
+    ham(2,2) =  0.5d0*delta_gap
+
+    call diag_2x2(ham, vec, lambda)
+
+    zrho_tmp = matmul(transpose(vec),matmul(zrho_k(:,:,ik),vec(:,:)))
+
+    zrho_tmp(1,2) = zrho_tmp(1,2)*exp(-zi*(lambda(2)-lambda(1))*dt*0.5d0)
+    zrho_tmp(2,1) = conjg(zrho_tmp(1,2))
+
+    zrho_k(:,:,ik) = matmul(vec, matmul(zrho_tmp,transpose(vec)))
+
+
+! relaxation from dt*it to dt*(it+0.5)
+    tt = dt*it
+    kt = kn(ik) + Afield_t(it)
+    dkdt = 0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
+
+    call calc_reference_states(zref_state, ref_energy, kn(ik), kt, dkdt)
+
+    zrho_tmp = matmul(transpose(conjg(zref_state)),matmul(zrho_k(:,:,ik),zref_state(:,:)))
+
+    rho_eq = 0d0
+    if(ref_energy(1) >= ref_energy(2))then
+      rho_eq(2,2) = 1d0
+    else
+      rho_eq(1,1) = 1d0
+    end if
+    zrho_tmp_delta = zrho_tmp - rho_eq
+    zrho_tmp_delta(1,1) = zrho_tmp_delta(1,1)*exp(-0.5d0*dt/T1_qm)
+    zrho_tmp_delta(2,1) = zrho_tmp_delta(2,1)*exp(-0.5d0*dt/T2_qm)
+    zrho_tmp_delta(1,2) = zrho_tmp_delta(1,2)*exp(-0.5d0*dt/T2_qm)
+    zrho_tmp_delta(2,2) = zrho_tmp_delta(2,2)*exp(-0.5d0*dt/T1_qm)
+
+    zrho_tmp = zrho_tmp_delta + rho_eq
+    zrho_k(:,:,ik) = matmul(zref_state, matmul(zrho_tmp,transpose(conjg(zref_state))))
+
+
+! relaxation from dt*(it+0.5) to dt*(it+1)
+    tt = dt*(it+1)
+    kt = kn(ik) + Afield_t(it+1)
+    dkdt = 0.5d0*(Afield_t(it+1+1)-Afield_t(it-1+1))/dt
+
+    call calc_reference_states(zref_state, ref_energy, kn(ik), kt, dkdt)
+
+    zrho_tmp = matmul(transpose(conjg(zref_state)),matmul(zrho_k(:,:,ik),zref_state(:,:)))
+
+    rho_eq = 0d0
+    if(ref_energy(1) >= ref_energy(2))then
+      rho_eq(2,2) = 1d0
+    else
+      rho_eq(1,1) = 1d0
+    end if
+    zrho_tmp_delta = zrho_tmp - rho_eq
+    zrho_tmp_delta(1,1) = zrho_tmp_delta(1,1)*exp(-0.5d0*dt/T1_qm)
+    zrho_tmp_delta(2,1) = zrho_tmp_delta(2,1)*exp(-0.5d0*dt/T2_qm)
+    zrho_tmp_delta(1,2) = zrho_tmp_delta(1,2)*exp(-0.5d0*dt/T2_qm)
+    zrho_tmp_delta(2,2) = zrho_tmp_delta(2,2)*exp(-0.5d0*dt/T1_qm)
+
+    zrho_tmp = zrho_tmp_delta + rho_eq
+    zrho_k(:,:,ik) = matmul(zref_state, matmul(zrho_tmp,transpose(conjg(zref_state))))
+
+! propagation from dt*(it+0.5) to dt*(it+1)
+    tt = dt*(it+1)
+
+    kt = kn(ik) + Afield_t(it+1)
+    ham(1,1) = -0.5d0*delta_gap
+    ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+    ham(1,2) = ham(2,1)
+    ham(2,2) =  0.5d0*delta_gap
+
+    call diag_2x2(ham, vec, lambda)
+
+    zrho_tmp = matmul(transpose(vec),matmul(zrho_k(:,:,ik),vec(:,:)))
+
+    zrho_tmp(1,2) = zrho_tmp(1,2)*exp(-zi*(lambda(2)-lambda(1))*dt*0.5d0)
+    zrho_tmp(2,1) = conjg(zrho_tmp(1,2))
+
+    zrho_k(:,:,ik) = matmul(vec, matmul(zrho_tmp,transpose(vec)))
+
+
+  end do
+
+end subroutine dt_evolve_q_master
+!-------------------------------------------------------------------------------
+subroutine calc_reference_states(zref_state, ref_energy, k0, kt, dkdt)
+  use global_variables
+  implicit none
+  complex(8),intent(out) :: zref_state(2,2)
+  real(8),intent(out) :: ref_energy(2)
+  real(8),intent(in) :: k0, kt, dkdt
+  real(8) :: ref_state(2,2)
+
+  select case(N_PROJ_METHOD)
+  case(N_PROJ_BLOCH)
+    call calc_bloch_states(ref_state, ref_energy, k0)
+    zref_state = ref_state
+  case(N_PROJ_HOUSTON)
+    call calc_houston_states(ref_state, ref_energy, kt)
+    zref_state = ref_state
+  case(N_PROJ_P_HOUSTON)
+    call calc_pol_houston_states(zref_state, ref_energy, kt, dkdt)
+  case default
+    stop 'Error in calc_reference_states'
+  end select
+
+end subroutine calc_reference_states
+!-------------------------------------------------------------------------------
+subroutine calc_bloch_states(ref_state, ref_energy, k0)
+  use global_variables
+  implicit none
+  real(8),intent(out) :: ref_state(2,2), ref_energy(2)
+  real(8),intent(in) :: k0
+  real(8) :: ham(2,2)
+
+  ham(1,1) = -0.5d0*delta_gap
+  ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*k0)
+  ham(1,2) = ham(2,1)
+  ham(2,2) =  0.5d0*delta_gap
+  
+  call diag_2x2(ham, ref_state, ref_energy)
+  
+
+end subroutine calc_bloch_states
+!-------------------------------------------------------------------------------
+subroutine calc_houston_states(ref_state, ref_energy, kt)
+  use global_variables
+  implicit none
+  real(8),intent(out) :: ref_state(2,2), ref_energy(2)
+  real(8),intent(in) :: kt
+  real(8) :: ham(2,2)
+
+  ham(1,1) = -0.5d0*delta_gap
+  ham(2,1) = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+  ham(1,2) = ham(2,1)
+  ham(2,2) =  0.5d0*delta_gap
+  
+  call diag_2x2(ham, ref_state, ref_energy)
+  
+  
+end subroutine calc_houston_states
+!-------------------------------------------------------------------------------
+subroutine calc_pol_houston_states(zref_state, ref_energy, kt, dkdt)
+  use global_variables
+  implicit none
+  complex(8),intent(out) :: zref_state(2,2)
+  real(8),intent(out) :: ref_energy(2)
+  real(8),intent(in) :: kt, dkdt
+  real(8) :: phi, xx, yy, eps_c, eps_v, factor
+  real(8) :: duc_dk(2), uv(2), uc(2)
+  complex(8) :: zham(2,2), zvec(2,2)
+
+  phi = -2d0*t_hop*cos(0.5d0*lattice_a*kt)
+  xx =  phi/(0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))
+  yy = -phi/(0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))
+
+  eps_c =  sqrt(delta_gap**2/4d0 + phi**2)
+  eps_v = -sqrt(delta_gap**2/4d0 + phi**2)
+
+  duc_dk(1)=-xx/(sqrt(1d0+xx**2))**3*xx + 1d0/sqrt(1d0+xx**2)**3
+  duc_dk(2)=-xx/(sqrt(1d0+xx**2))**3 
+  factor = 1d0/(0.5d0*delta_gap + sqrt(delta_gap**2/4d0 + phi**2))
+  factor = factor - phi**2/( &
+      (0.5d0*delta_gap+sqrt(delta_gap**2/4d0+phi**2))**2 &
+      *sqrt(delta_gap**2/4d0+phi**2) &
+      )
+
+  factor = factor *lattice_a*t_hop*sin(0.5d0*lattice_a*kt)
+
+  duc_dk = duc_dk*factor
+
+  uc(1) =  xx/sqrt(1d0+xx**2)
+  uc(2) = 1d0/sqrt(1d0+xx**2)
+
+  uv(1) = 1d0/sqrt(1d0+yy**2)
+  uv(2) =  yy/sqrt(1d0+yy**2)
+    
+  zham(1,1) = eps_v
+  zham(1,2) = -zi*sum(uv*duc_dk)*dkdt
+  zham(2,1) = conjg(zham(1,2))
+  zham(2,2) = eps_c
+
+  call diag_2x2_complex(zham, zvec, ref_energy)
+
+  zref_state(:,1) = uv*zvec(1,1) + uc*zvec(2,1)
+  zref_state(:,2) = uv*zvec(1,2) + uc*zvec(2,2)
+
+
+end subroutine calc_pol_houston_states
+!-------------------------------------------------------------------------------
+subroutine dt_evolve_tdse(it)
   use global_variables
   implicit none
   integer,intent(in) :: it
@@ -172,7 +415,7 @@ subroutine dt_evolve(it)
 
 
 ! propagation from dt*(it+0.5) to dt*(it+1)
-    tt = dt*it
+    tt = dt*(it+1)
 
     kt = kn(ik) + Afield_t(it+1)
     ham(1,1) = -0.5d0*delta_gap
@@ -193,9 +436,51 @@ subroutine dt_evolve(it)
   end do
 
 
-end subroutine dt_evolve
+end subroutine dt_evolve_tdse
 !-------------------------------------------------------------------------------
 subroutine calc_current(jt_t,it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  real(8),intent(out) :: jt_t
+
+  if(if_q_master_eq)then
+    call calc_current_q_master(jt_t,it)
+  else
+    call calc_current_tdse(jt_t,it)
+  end if
+
+end subroutine calc_current
+!-------------------------------------------------------------------------------
+subroutine calc_current_q_master(jt_t,it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  real(8),intent(out) :: jt_t
+  integer :: ik
+  real(8) :: pmat
+  real(8) :: tt, kt
+  complex(8) :: zmat(2,2)
+
+  jt_t = 0d0
+  do ik = 0, nk-1
+
+    kt = kn(ik) + Afield_t(it)
+    pmat = 2d0*t_hop*sin(0.5d0*lattice_a*kt)*0.5d0*lattice_a
+    zmat = 0d0
+    zmat(1,2) = pmat
+    zmat(2,1) = pmat
+    zmat = matmul(zmat, zrho_k(:,:,ik))
+
+    jt_t = jt_t + real(zmat(1,1)+zmat(2,2))
+  end do
+
+  jt_t = jt_t/nk
+
+
+end subroutine calc_current_q_master
+!-------------------------------------------------------------------------------
+subroutine calc_current_tdse(jt_t,it)
   use global_variables
   implicit none
   integer,intent(in) :: it
@@ -218,7 +503,7 @@ subroutine calc_current(jt_t,it)
 
   jt_t = jt_t/nk
 
-end subroutine calc_current
+end subroutine calc_current_tdse
 !-------------------------------------------------------------------------------
 subroutine calc_nex(nex_bloch,nex_houston,nex_pol_houston,it)
   use global_variables
@@ -314,13 +599,13 @@ subroutine init_laser_field
   integer :: it
   real(8) :: tt, ss
 
-  allocate(Efield_t(-1:nt+1),Afield_t(-1:nt+1))
+  allocate(Efield_t(-1:nt+1),Afield_t(-1:nt+2))
   Efield_t = 0d0
   Afield_t = 0d0
 
 
   if(Epulse0 /= 0d0)then
-    do it = 0, nt+1
+    do it = 0, nt+2
       tt = dt*it
       ss = (tt - 0.5d0*Tpulse0)
       if(abs(ss)<= 0.5d0*Tpulse0)then
@@ -331,7 +616,7 @@ subroutine init_laser_field
   end if
 
   if(Edc0 /= 0d0)then
-    do it = 0, nt+1
+    do it = 0, nt+2
       tt = dt*it
       if(tt<= Tdc0)then
         ss = tt/Tdc0
@@ -345,7 +630,7 @@ subroutine init_laser_field
   end if
 
 
-  do it = 0, nt
+  do it = 0, nt+1
     Efield_t(it) = -0.5d0*(Afield_t(it+1)-Afield_t(it-1))/dt
   end do
 
