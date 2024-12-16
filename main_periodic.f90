@@ -117,13 +117,28 @@ subroutine preparation
     ham(2,2) = 0.5d0*delta_gap
 
     call diag_2x2(ham, phi_gs(:,:,ik), sp_energy(:,ik))
-    zpsi(:,ik) = phi_gs(:,2,ik)
+    if(sp_energy(1,ik) > sp_energy(2,ik))then
+      zpsi(:,ik) = phi_gs(:,2,ik)
+    else
+      zpsi(:,ik) = phi_gs(:,1,ik)
+    end if
     write(*,*)phi_gs(:,2,ik) ! debug
   end do
 
 
   if(if_q_master_eq)then
     allocate(zrho_k(2,2,0:nk-1))
+    if(sp_energy(1,ik) > sp_energy(2,ik))then
+      zrho_k(1,1,ik) = phi_gs(1,2,ik)*phi_gs(1,2,ik)
+      zrho_k(2,1,ik) = phi_gs(2,2,ik)*phi_gs(1,2,ik)
+      zrho_k(1,2,ik) = phi_gs(1,2,ik)*phi_gs(2,2,ik)
+      zrho_k(2,2,ik) = phi_gs(2,2,ik)*phi_gs(2,2,ik)
+    else
+      zrho_k(1,1,ik) = phi_gs(1,1,ik)*phi_gs(1,1,ik)
+      zrho_k(2,1,ik) = phi_gs(2,1,ik)*phi_gs(1,1,ik)
+      zrho_k(1,2,ik) = phi_gs(1,1,ik)*phi_gs(2,1,ik)
+      zrho_k(2,2,ik) = phi_gs(2,1,ik)*phi_gs(2,1,ik)
+    end if
   end if
 
 end subroutine preparation
